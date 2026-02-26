@@ -7,13 +7,16 @@ from django.db import transaction
 from django.http import HttpResponse
 from .models import Product, Order, OrderItem
 from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth import login as auth_login
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
 
-
+@login_required
 def products_page(request):
     products = Product.objects.filter(is_active=True)
-    paid_orders = Order.objects.filter(status="Paid").order_by("-created_at")  
+    paid_orders = Order.objects.filter(status="Paid", user=request.user).order_by("-created_at")
 
     if request.method == "POST":
         total_amount = Decimal("0.00")
@@ -34,7 +37,7 @@ def products_page(request):
 
        
         with transaction.atomic():
-            order = Order.objects.create(total_amount=total_amount, status="Pending")
+            order = Order.objects.create(total_amount=total_amount, status="Pending", user=request.user)
             for product, qty in cart_items:
                 OrderItem.objects.create(
                     order=order,
@@ -81,6 +84,19 @@ def products_page(request):
         "paid_orders": paid_orders  
     })
 
+
+def signup(request):
+    if request.method == "POST":
+        form = UserCreationForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            auth_login(request, user)  # Auto-login after signup
+            messages.success(request, "Account created! Welcome! 🎉")
+            return redirect("products")  # Seedha products page pe
+    else:
+        form = UserCreationForm()
+
+    return render(request, "shop/signup.html", {"form": form})
 
 def success(request):
     order_id = request.GET.get("order_id")
