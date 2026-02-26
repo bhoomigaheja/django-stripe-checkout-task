@@ -13,13 +13,12 @@ stripe.api_key = settings.STRIPE_SECRET_KEY
 
 def products_page(request):
     products = Product.objects.filter(is_active=True)
-    paid_orders = Order.objects.filter(status="Paid").order_by("-created_at")  # 👈 YAHAN ADD KARO
+    paid_orders = Order.objects.filter(status="Paid").order_by("-created_at")  
 
     if request.method == "POST":
         total_amount = Decimal("0.00")
         cart_items = []
 
-        # 1) Read quantities
         for p in products:
             qty = int(request.POST.get(f"qty_{p.id}", 0))
             if qty > 0:
@@ -33,7 +32,7 @@ def products_page(request):
                 "error": "Please select at least one product."
             })
 
-        # 2) Create Order + OrderItems (atomic)
+       
         with transaction.atomic():
             order = Order.objects.create(total_amount=total_amount, status="Pending")
             for product, qty in cart_items:
@@ -44,7 +43,7 @@ def products_page(request):
                     quantity=qty
                 )
 
-        # 3) Prepare Stripe line_items (paise)
+      
         line_items = []
         for item in order.items.all():
             line_items.append({
@@ -56,13 +55,13 @@ def products_page(request):
                 "quantity": item.quantity,
             })
 
-        # 4) Success & Cancel URLs
+       
         success_url = request.build_absolute_uri(
             reverse("success")
         ) + f"?order_id={order.id}&session_id={{CHECKOUT_SESSION_ID}}"
         cancel_url = request.build_absolute_uri(reverse("cancel"))
 
-        # 5) Create Checkout Session
+    
         checkout_session = stripe.checkout.Session.create(
             payment_method_types=["card"],
             line_items=line_items,
@@ -71,16 +70,15 @@ def products_page(request):
             cancel_url=cancel_url,
         )
 
-        # 6) Save session id (anti double-charge)
         order.stripe_checkout_session_id = checkout_session.id
         order.save(update_fields=["stripe_checkout_session_id"])
 
-        # 7) Redirect to Stripe
+      
         return redirect(checkout_session.url, code=303)
 
     return render(request, "shop/products.html", {
         "products": products,
-        "paid_orders": paid_orders  # 👈 FINAL RENDER ME PASS KARO
+        "paid_orders": paid_orders  
     })
 
 
@@ -94,7 +92,6 @@ def success(request):
 
     order = get_object_or_404(Order, id=order_id)
 
-    # Verify Stripe session id to avoid fake success
     if order.stripe_checkout_session_id == session_id:
         if order.status != "Paid":
             order.status = "Paid"
